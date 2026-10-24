@@ -29,10 +29,12 @@ The original course code was lost, so the course part of this repository is a re
 ```bash
 pip install -r requirements.txt
 python test_solvers.py   # correctness checks
-python benchmark.py      # 5 trials per size; writes results.csv and two plots
+python test_tsplib.py    # TSPLIB loader checks
+python benchmark.py      # random instances, 5 trials per size; writes results.csv and two plots
+python run_tsplib.py     # TSPLIB instances; writes tsplib_results.csv and tsplib_gap.png
 ```
 
-## Results
+## Results on random instances
 
 Random Euclidean instances in a 100 × 100 square, mean of 5 trials per size.
 
@@ -68,14 +70,43 @@ Main observations:
 - **Combining move types matters.** 2-opt alone gets stuck in local optima (worst case 17.5%). Adding Or-opt, which relocates short chains of cities that 2-opt cannot move, found the optimum on all 30 small instances.
 - **A fixed budget stops scaling.** Simulated annealing matches the best tours up to n = 50 but falls behind 2-opt + Or-opt by n = 200 (about 3% worse), because its number of moves per city stays constant while the search space grows.
 
+## Extension 2: TSPLIB benchmarks against published optima
+
+The gaps above for n > 15 are only relative to the best tour found. To measure true quality, every heuristic was run on 15 instances from [TSPLIB](http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/) (Reinelt, 1991), the standard TSP benchmark library. The instances range from 51 to 280 cities, and each has a proven optimal tour length.
+
+TSPLIB's EUC_2D distances are rounded to the nearest integer, and the published optima use that rounding, so the loader rounds the same way. As a check, a test confirms that no solver ever reports a tour shorter than the published optimum.
+
+![TSPLIB gap](tsplib_gap.png)
+
+Mean over the 15 instances (simulated annealing averaged over 3 random seeds):
+
+| Method | Mean gap | Worst gap | Best gap | Mean time (s) |
+|---|---|---|---|---|
+| Nearest neighbour | 26.4% | 41.9% | 19.1% | 0.001 |
+| MST 2-approx | 38.4% | 47.2% | 29.5% | 0.002 |
+| Christofides | 12.3% | 14.6% | 7.9% | 0.078 |
+| NN + 2-opt | 7.2% | 12.6% | 1.8% | 0.006 |
+| NN + 2-opt + Or-opt | 4.3% | 8.2% | 0.7% | 0.086 |
+| Simulated annealing | 4.7% | 9.8% | 2.7% | 0.251 |
+
+Main observations:
+
+- **True gaps are larger than the random-instance estimates suggested.** On random instances above 15 cities, 2-opt + Or-opt looked within 0–3% of the best tour found, because it usually *was* the best tour found. Against real optima it averages 4.3% above. Comparing heuristics only with each other hides how far all of them are from optimal.
+- **The ranking from random instances holds.** NN + 2-opt beat Christofides on 14 of the 15 instances, despite having no worst-case guarantee, and the combined local search remains the best method overall.
+- **Simulated annealing's fixed budget shows up again.** It beat 2-opt + Or-opt on 5 of the 8 instances with up to 101 cities, but only 2 of the 7 larger ones, and it is the slowest method.
+- **Nearest neighbour is the least predictable.** It is 19–23% above optimal on the four smallest instances but about 42% on pr76 and lin105, which shows how much a greedy method depends on the layout of the instance.
+
 ## Files
 
 - `tsp_solvers.py`: all solvers and instance helpers
-- `benchmark.py`: timing, optimality gap, CSV output and plots
+- `benchmark.py`: random-instance benchmark: timing, optimality gap, CSV output and plots
+- `tsplib.py`: TSPLIB parser, rounded distance matrix and published optima
+- `run_tsplib.py`: TSPLIB benchmark
+- `data/tsplib/`: the 15 bundled TSPLIB instances and their optimal tour lengths
 - `test_solvers.py`: correctness tests (exact methods agree, approximation bounds hold, local search never worsens its starting tour)
+- `test_tsplib.py`: TSPLIB loader tests (parsing, distance rounding, no tour beats the optimum)
 
 ## Planned extensions
 
-- **Extension 2:** TSPLIB benchmarks against published optimal tours
 - **Extension 3:** empirical complexity fitting (log-log slopes vs theory)
 - **Extension 4:** comparison with a pretrained neural TSP solver, including generalisation to larger n and real instances
