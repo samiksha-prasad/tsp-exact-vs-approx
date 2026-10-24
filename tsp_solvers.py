@@ -204,12 +204,15 @@ def christofides(dist):
     return tour, tour_length(tour, dist)
 
 
-def two_opt_improve(tour, dist):
+def two_opt_improve(tour, dist, stats=None):
     """
     2-opt local search: remove two edges (a,b),(c,d) and reconnect as
     (a,c),(b,d) by reversing the segment between them, whenever that is
     shorter. Repeat until no improving move exists (a 2-opt local optimum).
     Each pass is O(n^2).
+
+    If a dict is passed as `stats`, the number of passes and improving
+    moves is recorded in it (used by the complexity analysis).
     """
     tour = list(tour)
     n = len(tour)
@@ -218,6 +221,8 @@ def two_opt_improve(tour, dist):
     improved = True
     while improved:
         improved = False
+        if stats is not None:
+            stats["passes"] = stats.get("passes", 0) + 1
         for i in range(1, n - 1):
             a, b = tour[i - 1], tour[i]
             for j in range(i + 1, n):
@@ -229,6 +234,8 @@ def two_opt_improve(tour, dist):
                     tour[i:j + 1] = reversed(tour[i:j + 1])
                     b = tour[i]
                     improved = True
+                    if stats is not None:
+                        stats["moves"] = stats.get("moves", 0) + 1
     return tour
 
 
