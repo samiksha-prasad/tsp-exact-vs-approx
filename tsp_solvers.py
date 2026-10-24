@@ -290,7 +290,12 @@ def nn_two_opt(dist):
 
 def nn_two_opt_or_opt(dist):
     """Nearest-neighbour start, then alternate 2-opt and Or-opt until neither improves."""
-    tour = nearest_neighbour(dist)[0]
+    return two_opt_or_opt_from(nearest_neighbour(dist)[0], dist)
+
+
+def two_opt_or_opt_from(tour, dist):
+    """Alternate 2-opt and Or-opt from any starting tour until neither improves."""
+    tour = list(tour)
     best = tour_length(tour, dist)
     while True:
         tour = or_opt_improve(two_opt_improve(tour, dist), dist)

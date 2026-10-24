@@ -35,6 +35,8 @@ python run_tsplib.py     # TSPLIB instances; writes tsplib_results.csv and tspli
 python complexity.py     # complexity analysis; writes complexity.csv and complexity.png (about 1 minute)
 ```
 
+Extension 4 also needs PyTorch and a clone of [POMO](https://github.com/yd-kwon/POMO). The easiest way to run it is the Colab notebook: [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/samiksha-prasad/tsp-exact-vs-approx/blob/main/neural/neural_vs_classical.ipynb)
+
 ## Results on random instances
 
 Random Euclidean instances in a 100 × 100 square, mean of 5 trials per size.
@@ -127,6 +129,51 @@ All fits have R² ≥ 0.99. Exponents vary by about ±0.2 between runs, because 
 
 **Why 2-opt grows faster than n².** One 2-opt pass checks every pair of edges, which is O(n²). But the search repeats passes until nothing improves, and the number of passes grows too. Counting them (third panel) gave passes ≈ n^0.23, which predicts a total of about n^2.23. That accounts for most of the measured n^2.33–2.41. The remainder fits the cost of applying improving moves: their number grows roughly linearly (≈ n^1.11), and each reverses a segment of up to n cities. "O(n²) per pass" understates the real cost of local search, because the number of passes is not constant.
 
+## Extension 4: a pretrained neural solver vs the classical methods
+
+[POMO](https://github.com/yd-kwon/POMO) (Kwon et al., *POMO: Policy Optimization with Multiple Optima for Reinforcement Learning*, NeurIPS 2020) is a transformer trained with reinforcement learning to build TSP tours one city at a time. Its authors publish three models, trained on random cities in the unit square with 20, 50 and 100 cities. They are used here unchanged, with no retraining. POMO's code and weights are downloaded from the authors' repository and are not part of this project. `neural/pomo_wrapper.py` only lets the models run on instances chosen here, scaling each one into the unit square they were trained on.
+
+POMO builds n tours in parallel, one starting from each city. It repeats this on 8 flipped and rotated copies of the instance and keeps the shortest tour. Tour lengths are then computed with this project's own distance function, including TSPLIB's rounding, so they compare directly with the classical results.
+
+The experiment asks three questions.
+
+**1. On real TSPLIB maps, how close does POMO get to the optimum?**
+
+![Neural vs classical on TSPLIB](neural_tsplib_gap.png)
+
+| Method | Mean gap | n ≤ 105 | n > 105 | Worst |
+|---|---|---|---|---|
+| NN + 2-opt + Or-opt (best classical) | 4.34% | 4.11% | 4.80% | 8.2% |
+| POMO trained on 20 cities | 11.80% | 6.69% | 22.03% | 35.8% |
+| POMO trained on 50 cities | 3.15% | 0.62% | 8.19% | 22.6% |
+| POMO trained on 100 cities | 1.05% | 0.18% | 2.79% | 11.1% |
+| POMO-100 without augmentation | 1.50% | 0.45% | 3.59% | 11.9% |
+| **POMO-100, then 2-opt + Or-opt** | **0.44%** | **0.06%** | **1.20%** | **4.9%** |
+
+POMO-100 beat the best classical heuristic on 14 of the 15 instances, often by a wide margin. On berlin52 it was 0.01% above optimal against 5.3%, and on ch130 0.16% against 8.2%. It found the exact optimum on 3 instances. It was trained only on random points, so it transfers well to real map layouts of a similar size.
+
+**2. How well do the models generalise to other sizes?**
+
+On random instances there is no known optimum, so each POMO tour is compared with NN + 2-opt + Or-opt on the same instance (5 instances per size; negative means POMO's tour is shorter).
+
+![Generalisation across sizes](neural_generalisation.png)
+
+| Trained on | n = 20 | 50 | 100 | 200 | 300 | 500 |
+|---|---|---|---|---|---|---|
+| 20 cities | +0.0% | −1.9% | +4.8% | +22.3% | +26.1% | +36.7% |
+| 50 cities | +0.0% | −2.9% | −3.5% | +6.3% | +13.8% | +25.8% |
+| 100 cities | +0.0% | −2.8% | −3.9% | −1.1% | +1.8% | +17.9% |
+
+Every model is strong at and below its training size and degrades steadily above it. The 100-city model stays ahead of local search up to about twice its training size, falls behind by 300 cities, and is 18% worse at 500. The smaller models break down earlier and harder: the 20-city model is already 22% worse at 200 cities. The same pattern appears on TSPLIB, where POMO-100's only loss to classical search was a280, the largest instance at 280 cities (11.1% against 6.9%). At n = 20 every method finds the same tours, which are very likely optimal at that size.
+
+**3. Does classical local search fix what POMO gets wrong?**
+
+Yes. Running 2-opt + Or-opt on POMO-100's tour cut the mean TSPLIB gap from 1.05% to 0.44%. It found the exact optimum on 9 of the 15 instances and beat the classical heuristic on all 15. The two are complementary: POMO supplies a near-optimal global structure, which plain nearest neighbour does not, and local search repairs the small local mistakes that grow on instances larger than the model was trained on. On a280, polishing cut POMO's gap from 11.1% to 4.9%.
+
+**Cost.** These runs used a 2-core CPU without a GPU. There POMO took about 0.8 s per TSPLIB instance (0.16 s without augmentation), against 0.06 s for the classical local search. At 500 cities it took about 30 s, against about 3 s. On a GPU the neural model is much faster, but the comparison shows that most of POMO's advantage comes from tour quality, not speed.
+
+**Takeaway.** A learned solver can beat well-established heuristics, but only within the range of problem sizes it was trained on. The most reliable approach found here combines the two: the network for the global structure, then classical local search for the final repairs.
+
 ## Files
 
 - `tsp_solvers.py`: all solvers and instance helpers
@@ -134,10 +181,10 @@ All fits have R² ≥ 0.99. Exponents vary by about ±0.2 between runs, because 
 - `tsplib.py`: TSPLIB parser, rounded distance matrix and published optima
 - `run_tsplib.py`: TSPLIB benchmark
 - `complexity.py`: empirical complexity analysis (runtime fits, 2-opt pass counts, Held–Karp memory)
+- `neural/pomo_wrapper.py`: runs the pretrained POMO models on chosen instances
+- `neural/run_neural.py`: Extension 4 experiment (TSPLIB, generalisation across sizes, POMO + local search)
+- `neural/neural_vs_classical.ipynb`: Colab notebook that reproduces Extension 4
 - `data/tsplib/`: the 15 bundled TSPLIB instances and their optimal tour lengths
 - `test_solvers.py`: correctness tests (exact methods agree, approximation bounds hold, local search never worsens its starting tour)
 - `test_tsplib.py`: TSPLIB loader tests (parsing, distance rounding, no tour beats the optimum)
 
-## Planned extensions
-
-- **Extension 4:** comparison with a pretrained neural TSP solver, including generalisation to larger n and real instances
